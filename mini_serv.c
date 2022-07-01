@@ -1,4 +1,5 @@
-#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -6,13 +7,14 @@
 #include <unistd.h>
 
 int fd_arr[999];
-int max_conn = 0;
+int max_conn = 80;
 int client_id = 0;
 fd_set active;
 fd_set readyRead;
 fd_set readyWrite;
 char bufRead[9999];
 char bufWrite[9999];
+char s[9999];
 
 void fatal()
 {
@@ -29,7 +31,7 @@ void send_to_all(int author)
     }
 }
 
-void wrong_arg_cont()
+void wrong_arg_cnt()
 {
     write(2, "Wrong number of arguments\n", 26);
     exit(1);
@@ -42,6 +44,7 @@ int main(int ac, char **av)
 
     int server_fd;
 	struct sockaddr_in servaddr;
+    socklen_t len = sizeof(servaddr);
 
 	// socket create and verification 
 	server_fd = socket(AF_INET, SOCK_STREAM, 0); 
@@ -65,56 +68,56 @@ int main(int ac, char **av)
     FD_ZERO(&active);
     FD_SET(server_fd, &active);
     bzero(&fd_arr, sizeof(fd_arr));
-    
     while (1)
     {
         readyRead = readyWrite = active;
         if (select(max_conn + 1, &readyRead, &readyWrite, 0 , 0) < 0)
             continue; // or exit?
-        
+
         for (int x = 0; x <= max_conn; x++)
         {
-            if (FD_ISSET(x, &readyRead))
+            if (x == server_fd && FD_ISSET(x, &readyRead)) // new client
             {
-                if (x == server_fd) // new connection
-                {
-                    int client_fd = accept(server_fd, (struct sockaddr *)&servaddr, sizeof(servaddr));
-                    if (client_fd < 0)
-                        continue;
+                int client_fd = accept(server_fd, (struct sockaddr *)&servaddr, &len);
+                if (client_fd < 0)
+                    continue;
 
-                    fd_arr[client_fd] = client_id++;
-                    FD_SET(client_fd, &active); // add fd to the active set
-                    // server: client %d just arrived\n"
+                //max_conn = client_fd;
+                fd_arr[client_fd] = client_id++;
+                FD_SET(client_fd, &active); // add fd to the active set
+                sprintf(bufWrite, "server: client %d just arrived\n", fd_arr[client_fd]);
+                send_to_all(x);
+                break;
+            }
+            else if (x != server_fd && FD_ISSET(x, &readyRead))
+            {
+                int read_bytes = recv(x, bufRead, 9999, 0);
+
+                if (read_bytes <= 0) // client dropped
+                {
+                    FD_CLR(x, &active); // remove fd from the active set
+                    sprintf(bufWrite, "server client %d just left\n", fd_arr[x]);
+                    close(x);
                     break;
                 }
-                if (x != server_fd) // read
+                else
                 {
-                    int read_bytes = recv(x, bufRead, 9999, 0);
-
-                    if (read_bytes <= 0) // client dropped
+                    char s[9999];
+                    bzero(&s, sizeof(s));
+                    for (int i = 0, j = 0; i < read_bytes; i++, j++)
                     {
-                        FD_CLR(x, &active); // remove fd from the active set
-                        // server: client %d just left\n
-                        close(x);
-                        break;
-                    }
-                    else
-                    {
-                        char s[9999];
-                        bzero(&s, sizeof(s));
-                        for (int i = 0, j = 0; i < read_bytes; i++, j++) // send line for line
+                        s[j] = bufRead[i];
+                        if (s[j] == '\n') // send to clients line by line
                         {
-                            s[j] = bufRead[i];
-                            if (s[j] == '\n')
-                            {
-                                s[j] = '\0';
-                                // send to others
-                                j = -1;
-                            }
+                            s[j] = '\0';
+                            sprintf(bufWrite, "client %d: %s\n", fd_arr[x], s);
+                            send_to_all(x);
+                            j = -1;
                         }
                     }
                 }
             }
         }
+
     }
 }
