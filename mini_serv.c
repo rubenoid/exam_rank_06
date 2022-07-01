@@ -2,19 +2,22 @@
 #include <stdlib.h>
 #include <netdb.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <netinet/in.h>
 #include <string.h>
 #include <unistd.h>
 
-int fd_arr[999];
+# define HUGE 4096 * 42
+
+int fd_arr[1024 * 64];
 int max_conn = 80;
 int client_id = 0;
 fd_set active;
 fd_set readyRead;
 fd_set readyWrite;
-char bufRead[9999];
-char bufWrite[9999];
-char s[9999];
+char bufRead[HUGE];
+char bufWrite[HUGE];
+char s[HUGE];
 
 void fatal()
 {
@@ -52,6 +55,7 @@ int main(int ac, char **av)
         fatal();
 	} 
 
+    max_conn = server_fd;
 	bzero(&servaddr, sizeof(servaddr)); 
 
 	// assign IP, PORT 
@@ -82,7 +86,7 @@ int main(int ac, char **av)
                 if (client_fd < 0)
                     continue;
 
-                //max_conn = client_fd;
+                max_conn = (client_fd > max_conn) ? client_fd : max_conn;
                 fd_arr[client_fd] = client_id++;
                 FD_SET(client_fd, &active); // add fd to the active set
                 sprintf(bufWrite, "server: client %d just arrived\n", fd_arr[client_fd]);
@@ -91,18 +95,19 @@ int main(int ac, char **av)
             }
             else if (x != server_fd && FD_ISSET(x, &readyRead))
             {
-                int read_bytes = recv(x, bufRead, 9999, 0);
+                int read_bytes = recv(x, bufRead, HUGE, 0);
 
                 if (read_bytes <= 0) // client dropped
                 {
-                    FD_CLR(x, &active); // remove fd from the active set
                     sprintf(bufWrite, "server client %d just left\n", fd_arr[x]);
+                    send_to_all(x);
+                    FD_CLR(x, &active); // remove fd from the active set
                     close(x);
                     break;
                 }
                 else
                 {
-                    char s[9999];
+                    char s[HUGE];
                     bzero(&s, sizeof(s));
                     for (int i = 0, j = 0; i < read_bytes; i++, j++)
                     {
