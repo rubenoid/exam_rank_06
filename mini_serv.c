@@ -7,16 +7,17 @@
 #include <string.h>
 #include <unistd.h>
 
-# define HUGE 4096 * 42
+# define HUGER 4096
+# define HUGE 4096 * 2
 
 int fd_arr[1024 * 64];
-int max_conn = 80;
+int max_conn = 0;
 int client_id = 0;
 fd_set active;
 fd_set readyRead;
 fd_set readyWrite;
-char bufRead[HUGE];
-char bufWrite[HUGE];
+char bufRead[HUGER];
+char bufWrite[HUGER + 1];
 char s[HUGE];
 
 void fatal()
@@ -45,20 +46,22 @@ int main(int ac, char **av)
     if (ac != 2)
         wrong_arg_cnt();
 
-    int server_fd;
-	struct sockaddr_in servaddr;
-    socklen_t len = sizeof(servaddr);
 
+    bzero(&fd_arr, sizeof(fd_arr));
+    FD_ZERO(&active);
 	// socket create and verification 
-	server_fd = socket(AF_INET, SOCK_STREAM, 0); 
+	int server_fd = socket(AF_INET, SOCK_STREAM, 0); 
 	if (server_fd == -1) { 
         fatal();
 	} 
+    FD_SET(server_fd, &active);
 
     max_conn = server_fd;
-	bzero(&servaddr, sizeof(servaddr)); 
 
 	// assign IP, PORT 
+	struct sockaddr_in servaddr;
+	bzero(&servaddr, sizeof(servaddr)); 
+    socklen_t len = sizeof(servaddr);
 	servaddr.sin_family = AF_INET; 
 	servaddr.sin_addr.s_addr = htonl(2130706433); //127.0.0.1
 	servaddr.sin_port = htons(atoi(av[1]));
@@ -69,9 +72,6 @@ int main(int ac, char **av)
     if (listen(server_fd, 128) != 0)
         fatal();
 
-    FD_ZERO(&active);
-    FD_SET(server_fd, &active);
-    bzero(&fd_arr, sizeof(fd_arr));
     while (1)
     {
         readyRead = readyWrite = active;
@@ -107,8 +107,8 @@ int main(int ac, char **av)
                 }
                 else
                 {
-                    char s[HUGE];
-                    bzero(&s, sizeof(s));
+                    //char s[HUGE];
+                    //bzero(&s, sizeof(s));
                     for (int i = 0, j = 0; i < read_bytes; i++, j++)
                     {
                         s[j] = bufRead[i];
